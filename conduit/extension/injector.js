@@ -61,11 +61,27 @@ document.addEventListener("conduit:inject", async (ev) => {
         method = "native-setter";
       }
     } else {
-      // contenteditable (Claude, Gemini)
+      // contenteditable (Claude, Gemini, new ChatGPT)
       input.focus();
       document.execCommand("selectAll", false, null);
-      document.execCommand("delete", false, null);
-      document.execCommand("insertText", false, text);
+      
+      const dt = new DataTransfer();
+      dt.setData("text/plain", text);
+      const pasteEvent = new ClipboardEvent("paste", {
+        clipboardData: dt,
+        bubbles: true,
+        cancelable: true,
+      });
+      
+      // Dispatch paste event. Modern editors (Lexical/ProseMirror) intercept this.
+      input.dispatchEvent(pasteEvent);
+      
+      // If the editor didn't handle the paste natively, fallback to execCommand
+      if (!pasteEvent.defaultPrevented) {
+        document.execCommand("delete", false, null);
+        document.execCommand("insertText", false, text);
+      }
+      
       input.dispatchEvent(new InputEvent("input", { bubbles: true, data: text }));
       const actual = input.innerText || input.textContent || "";
       console.log(`[Conduit injector] contenteditable insert, content="${actual.slice(0, 50)}"`);
