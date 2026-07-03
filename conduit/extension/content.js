@@ -714,9 +714,10 @@ function findImageCandidates(imgSrcsBefore) {
     // Skip anything that was already on the page before we sent the prompt
     if (imgSrcsBefore.has(src)) return false;
 
-    // Skip avatars / profile pictures
-    const isAvatar = img.closest('[class*="avatar"]') ||
-                     img.classList.contains("avatar") ||
+    // Skip avatars — check the img element itself, not ancestors
+    // (img.closest('[class*="avatar"]') was too broad: Gemini puts generated
+    //  images inside containers that happen to have "avatar" in ancestor classes)
+    const isAvatar = img.classList.contains("avatar") ||
                      /avatar|profile|user/i.test(img.alt || "") ||
                      /avatar|profile|user/i.test(img.className || "");
     if (isAvatar) { console.log(`[Conduit]   skip avatar: ${src.slice(0, 60)}`); return false; }
