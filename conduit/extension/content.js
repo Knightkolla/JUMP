@@ -163,41 +163,145 @@ async function discoverSelector(adapter, role) {
     }
   }
 
-  // ── Step 4: LLM fallback ──
-  console.warn(`[Conduit] Falling back to LLM for ${cacheKey}`);
+  // ── Step 4: LLM calibration fallback ──
+  // One call returns ALL selectors for the page (faster than per-role requests).
+  console.warn(`[Conduit] Falling back to LLM calibration for ${cacheKey}`);
   try {
-    const domSnapshot = trimDOM();
-    const resp = await fetch("http://localhost:8765/v1/derive-selector", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ provider: adapter.id, role, dom: domSnapshot }),
-    });
-    if (resp.ok) {
-      const { selector } = await resp.json();
-      if (selector) {
-        const el = resolveSelector(selector, role);
-        if (el) {
-          selectorCache[cacheKey] = selector;
-          console.log(`[Conduit] LLM selector for ${cacheKey}: ${selector}`);
-          return { selector, element: el };
-        }
+    const domain = window.location.hostname;
+
+    // 4a. Check chrome.storage.local for a previously cached full calibration
+    let selSet = null;
+    try {
+      const stored = await chrome.storage.local.get(domain);
+      if (stored[domain]?.selectors) {
+        selSet = stored[domain].selectors;
+        console.log(`[Conduit] Using stored calibration for ${domain}`);
+      }
+    } catch (e) {
+      console.warn("[Conduit] Failed to read storage:", e.message);
+    }
+
+    // 4b. Run fresh calibration if nothing cached
+    if (!selSet) {
+      selSet = await runCalibration(domain);
+      chrome.storage.local.set({ [domain]: { selectors: selSet, calibrated_at: Date.now() } })
+        .catch(() => {});
+    }
+
+    // Populate in-memory cache for all roles at once
+    populateCacheFromCalibration(adapter.id, selSet);
+
+    const selector = selectorFromCalibration(selSet, role);
+    if (selector) {
+      const el = resolveSelector(selector, role);
+      if (el) {
+        selectorCache[cacheKey] = selector;
+        console.log(`[Conduit] Calibrated selector for ${cacheKey}: ${selector}`);
+        return { selector, element: el };
       }
     }
   } catch (e) {
-    console.warn("[Conduit] LLM fallback request failed:", e.message);
+    console.warn("[Conduit] Calibration fallback failed:", e.message);
   }
 
   console.error(`[Conduit] Could not find selector for ${cacheKey}`);
   return null;
 }
 
-/** Serialize a trimmed DOM snapshot for LLM consumption (≤8 KB). */
-function trimDOM() {
-  const clone = document.body.cloneNode(true);
-  clone.querySelectorAll("script, style, svg, noscript, link, meta").forEach((n) => n.remove());
-  // Remove deeply invisible subtrees
-  clone.querySelectorAll("[aria-hidden='true']").forEach((n) => n.remove());
-  return clone.innerHTML.replace(/\s{2,}/g, " ").slice(0, 8000);
+// Tags stripped entirely during DOM compression
+const _STRIP_TAGS = new Set(["SCRIPT","STYLE","SVG","LINK","META","NOSCRIPT","IFRAME","NAV","ASIDE"]);
+// Attributes preserved during compression
+const _KEEP_ATTRS = ["id","class","role","aria-label","placeholder","type","contenteditable","data-testid","name"];
+
+/**
+ * Walk the DOM and produce a compact semantic snapshot for LLM calibration.
+ * Much more structured than innerHTML slicing — strips noise, keeps only
+ * meaningful attributes, limits depth and total size.
+ */
+function compressDom(root = document.body, maxDepth = 45, maxChars = 80000) {
+  const lines = [];
+  let charCount = 0;
+  let truncated = false;
+
+  function walk(node, depth) {
+    if (truncated || charCount >= maxChars || depth > maxDepth) { truncated = true; return; }
+
+    if (node.nodeType === Node.TEXT_NODE) {
+      const t = (node.textContent || "").trim();
+      if (t) {
+        const line = "  ".repeat(depth) + `"${t.length > 50 ? t.slice(0, 47) + "..." : t}"`;
+        lines.push(line); charCount += line.length + 1;
+      }
+      return;
+    }
+
+    if (node.nodeType !== Node.ELEMENT_NODE) return;
+    const el = node;
+    if (_STRIP_TAGS.has(el.tagName)) return;
+
+    let desc = el.tagName.toLowerCase();
+    for (const attr of _KEEP_ATTRS) {
+      const val = el.getAttribute(attr);
+      if (!val) continue;
+      if (attr === "id") desc += `#${val}`;
+      else if (attr === "class") {
+        const cls = val.trim().split(/\s+/).slice(0, 2).join(".");
+        if (cls) desc += `.${cls}`;
+      } else {
+        desc += `[${attr}="${val.length > 30 ? val.slice(0, 27) + "..." : val}"]`;
+      }
+    }
+
+    const line = "  ".repeat(depth) + desc;
+    lines.push(line); charCount += line.length + 1;
+    for (const child of el.childNodes) { if (truncated) break; walk(child, depth + 1); }
+  }
+
+  walk(root, 0);
+  if (truncated) lines.push("... (truncated)");
+  return lines.join("\n");
+}
+
+/**
+ * Send the page's DOM snapshot to the backend for LLM calibration.
+ * Returns a full SelectorSet: input, send, response container, indicator.
+ */
+async function runCalibration(domain) {
+  console.log(`[Conduit] Running LLM calibration for ${domain}…`);
+  const dom_snapshot = compressDom();
+  console.log(`[Conduit] DOM snapshot: ${dom_snapshot.length} chars`);
+
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage({ type: "calibrate_request", domain, dom_snapshot }, (resp) => {
+      if (chrome.runtime.lastError) return reject(new Error(chrome.runtime.lastError.message));
+      if (resp?.ok && resp.selectors) resolve(resp.selectors);
+      else reject(new Error(resp?.error || "Calibration failed"));
+    });
+  });
+}
+
+/** Map a calibrated SelectorSet to the selector for a given role. */
+function selectorFromCalibration(selSet, role) {
+  if (!selSet) return null;
+  switch (role) {
+    case "input":      return selSet.input_selector || null;
+    case "submit":     return selSet.send_mechanism?.selector || null;
+    case "doneSignal": return selSet.generating_indicator_selector || null;
+    default:           return null;
+  }
+}
+
+/** Populate the in-memory selectorCache from a calibrated SelectorSet. */
+function populateCacheFromCalibration(adapterId, selSet) {
+  if (!selSet) return;
+  const map = {
+    input:      selSet.input_selector,
+    submit:     selSet.send_mechanism?.selector,
+    doneSignal: selSet.generating_indicator_selector,
+  };
+  for (const [role, sel] of Object.entries(map)) {
+    if (sel) selectorCache[`${adapterId}:${role}`] = sel;
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -299,22 +403,22 @@ function sleep(ms) {
 }
 
 /**
- * Polls for the "send button re-enabled" done signal.
+ * Waits for the LLM to finish generating and returns the captured response text.
  *
- * Flow:
- *   Phase 1 (up to 15 s): wait for generation to START (handles SPA navigation delay).
- *   Phase 2 (up to timeoutMs): wait for generation to FINISH (send btn enabled, stop btn gone).
- *
- * The text-stable heuristic is NOT used because streaming has pauses that trigger false positives.
+ * Phase 1 (≤15 s): poll until generationIsActive() = true (handles SPA navigation).
+ * Phase 2: MutationObserver on document.body — reacts to DOM changes instantly
+ *   instead of polling every 500 ms. On each mutation we check generationIsActive():
+ *   when it returns false the stop button is gone and we capture immediately.
+ *   An idle fallback fires if DOM goes quiet for 2 s without us detecting done.
  */
 async function waitForDone(msgsBefore = 0, timeoutMs = 120_000) {
   const started = Date.now();
 
-  // ── Phase 1: wait for generation to START (up to 15 s handles SPA navigation) ──
-  const phase1End = Date.now() + 15_000;
+  // ── Phase 1: wait for generation to START (up to 15 s) ──
+  const phase1End = started + 15_000;
   let generationStarted = false;
   while (!generationStarted && Date.now() < phase1End) {
-    await sleep(300);
+    await sleep(200);
     if (generationIsActive()) generationStarted = true;
   }
   if (!generationStarted) {
@@ -323,44 +427,63 @@ async function waitForDone(msgsBefore = 0, timeoutMs = 120_000) {
     console.log("[Conduit] Phase 1 done: generation is active");
   }
 
-  // ── Phase 2: wait for generation to stop ──
+  // ── Phase 2: MutationObserver-based done detection ──
   return new Promise((resolve, reject) => {
     let settled = false;
-    let pollCount = 0;
+    let idleTimer = null;
 
-    const interval = setInterval(async () => {
-      if (settled) { clearInterval(interval); return; }
+    async function finish(reason) {
+      if (settled) return;
+      settled = true;
+      if (idleTimer) clearTimeout(idleTimer);
+      observer.disconnect();
+      clearTimeout(safetyTimer);
 
-      if (Date.now() - started > timeoutMs) {
-        clearInterval(interval);
-        settled = true;
-        reject(new Error(`Timeout after ${timeoutMs / 1000}s`));
-        return;
-      }
-
-      const active = generationIsActive();
-      pollCount++;
-      if (pollCount % 6 === 0) {
-        console.log(`[Conduit] poll #${pollCount}: active=${active}, url=${window.location.pathname}`);
-      }
-
-      if (!active) {
-        // Lock before yielding so no other interval tick re-enters
-        settled = true;
-        clearInterval(interval);
-        // Grace period: let the last tokens render to the DOM
+      // Short grace period for the last tokens to render
+      await sleep(800);
+      let captured = captureResponse(msgsBefore);
+      if (!captured) {
+        console.warn("[Conduit] captureResponse empty, retrying in 1.5 s…");
         await sleep(1500);
-        // Try to capture; if empty, wait a bit more and retry once
-        let captured = captureResponse(msgsBefore);
-        if (!captured) {
-          console.warn("[Conduit] captureResponse empty on first try, retrying in 2s...");
-          await sleep(2000);
-          captured = captureResponse(msgsBefore);
-        }
-        console.log(`[Conduit] captureResponse: ${captured.length} chars`);
-        resolve(captured);
+        captured = captureResponse(msgsBefore);
       }
-    }, 500);
+      console.log(`[Conduit] waitForDone(${reason}): ${captured.length} chars`);
+      resolve(captured);
+    }
+
+    const remaining = timeoutMs - (Date.now() - started);
+    const safetyTimer = setTimeout(() => {
+      if (!settled) {
+        observer.disconnect();
+        reject(new Error(`Timeout after ${timeoutMs / 1000}s`));
+      }
+    }, remaining);
+
+    function resetIdleTimer() {
+      if (idleTimer) clearTimeout(idleTimer);
+      // If DOM goes idle for 2 s and generation is done, capture
+      idleTimer = setTimeout(() => {
+        if (!settled && !generationIsActive()) finish("idle_timeout");
+      }, 2000);
+    }
+
+    const observer = new MutationObserver(() => {
+      if (settled) return;
+      if (!generationIsActive()) {
+        finish("indicator_gone");
+      } else {
+        // Still generating — reset idle sentinel
+        resetIdleTimer();
+      }
+    });
+
+    observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+
+    // Kick off initial idle timer (handles very fast responses before first mutation)
+    resetIdleTimer();
+
+    // If generation already finished during Phase 1 pause, don't wait for a mutation
+    if (generationStarted && !generationIsActive()) finish("already_done");
   });
 }
 
@@ -511,6 +634,16 @@ async function toggleWebSearch(adapter, enable) {
   }
 }
 
+function fetchImageViaBackground(url) {
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage({ type: "fetchImage", url }, (resp) => {
+      if (chrome.runtime.lastError) return reject(new Error(chrome.runtime.lastError.message));
+      if (resp?.ok) resolve(resp.dataUrl);
+      else reject(new Error(resp?.error || "fetchImage failed"));
+    });
+  });
+}
+
 async function captureImages(msgsBefore) {
   let container = null;
   const msgs = Array.from(document.querySelectorAll('[data-message-author-role="assistant"]'));
@@ -537,16 +670,8 @@ async function captureImages(msgsBefore) {
     if (!src || isAvatar || (img.naturalWidth > 0 && img.naturalWidth < 120) || (img.width > 0 && img.width < 120)) continue;
 
     try {
-      console.log(`[Conduit] Fetching and encoding image: ${src}`);
-      const resp = await fetch(src);
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const blob = await resp.blob();
-      const dataUrl = await new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result);
-        reader.onerror = reject;
-        reader.readAsDataURL(blob);
-      });
+      console.log(`[Conduit] Fetching and encoding image via SW: ${src}`);
+      const dataUrl = await fetchImageViaBackground(src);
       base64Images.push(dataUrl);
       console.log(`[Conduit] Image encoded successfully. Size: ${dataUrl.length} chars`);
     } catch (e) {

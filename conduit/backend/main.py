@@ -16,6 +16,9 @@ from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from calibration import calibrate_selectors
+from models import CalibrateRequest
+
 load_dotenv()
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -133,6 +136,22 @@ async def chat(req: ChatRequest):
     except Exception as exc:
         pending_requests.pop(request_id, None)
         raise HTTPException(500, str(exc))
+
+
+@app.post("/v1/calibrate")
+async def calibrate_endpoint(req: CalibrateRequest):
+    """
+    LLM calibration: given a compressed DOM snapshot, return a full SelectorSet
+    covering input, send button, response container, and generating indicator.
+    One LLM call replaces multiple per-role derive-selector calls.
+    """
+    log.info(f"Calibrating selectors for domain={req.domain}")
+    try:
+        selector_set = await calibrate_selectors(req.dom_snapshot, req.domain)
+        return {"selectors": selector_set.model_dump()}
+    except Exception as exc:
+        log.error(f"Calibration failed for domain={req.domain}: {exc}")
+        raise HTTPException(500, f"Calibration failed: {exc}")
 
 
 @app.post("/v1/derive-selector")

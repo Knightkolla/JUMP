@@ -11,9 +11,12 @@
  */
 
 const BACKEND_WS_URL = "ws://localhost:8765/ws";
+const BACKEND_HTTP_URL = "http://localhost:8765";
 const KEEPALIVE_ALARM = "conduit-keepalive";
 
 let ws = null;
+let reconnectDelay = 1_000;
+const RECONNECT_MAX = 30_000;
 
 // In-memory mirrors of chrome.storage.session (rebuilt on each SW wake)
 // provider id  →  tab id
@@ -46,6 +49,7 @@ function connect() {
 
   ws.onopen = () => {
     console.log("[Conduit bg] Connected to backend");
+    reconnectDelay = 1_000; // reset backoff on successful connect
     // Re-announce every provider we know about (handles SW restart + reconnect)
     for (const provider of Object.keys(providerToTab)) {
       wsSend({ type: "status", provider, ready: true });
@@ -66,9 +70,10 @@ function connect() {
   ws.onerror = (e) => console.error("[Conduit bg] WebSocket error", e);
 
   ws.onclose = () => {
-    console.warn("[Conduit bg] WebSocket closed – retrying in 3 s");
+    console.warn(`[Conduit bg] WebSocket closed – retrying in ${reconnectDelay}ms`);
     ws = null;
-    setTimeout(connect, 3_000);
+    setTimeout(connect, reconnectDelay);
+    reconnectDelay = Math.min(reconnectDelay * 2, RECONNECT_MAX);
   };
 }
 
@@ -147,6 +152,52 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         providers: Object.keys(providerToTab),
       });
       break;
+
+    case "calibrate_request": {
+      // Route DOM calibration through the SW so the LLM API key stays server-side.
+      const { domain, dom_snapshot } = msg;
+      fetch(`${BACKEND_HTTP_URL}/v1/calibrate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ domain, dom_snapshot }),
+      })
+        .then(async (res) => {
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({ detail: `HTTP ${res.status}` }));
+            throw new Error(err.detail || `HTTP ${res.status}`);
+          }
+          return res.json();
+        })
+        .then((result) => {
+          console.log(`[Conduit bg] Calibration succeeded for domain=${domain}`);
+          sendResponse({ ok: true, selectors: result.selectors });
+        })
+        .catch((err) => {
+          console.error(`[Conduit bg] Calibration failed for domain=${domain}:`, err.message);
+          sendResponse({ ok: false, error: err.message });
+        });
+      return true; // async response
+    }
+
+    case "fetchImage": {
+      // Fetch images from the SW where cross-origin requests bypass CORS.
+      // FileReader is unavailable in SW; convert ArrayBuffer → base64 manually.
+      (async () => {
+        try {
+          const resp = await fetch(msg.url);
+          if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+          const buf = await resp.arrayBuffer();
+          const bytes = new Uint8Array(buf);
+          const contentType = resp.headers.get("content-type") || "image/png";
+          let binary = "";
+          for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+          sendResponse({ ok: true, dataUrl: `data:${contentType};base64,${btoa(binary)}` });
+        } catch (e) {
+          sendResponse({ ok: false, error: e.message });
+        }
+      })();
+      break;
+    }
 
     default:
       sendResponse({ ok: false, reason: "unknown message type" });
