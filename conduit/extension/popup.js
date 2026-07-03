@@ -1,6 +1,6 @@
 "use strict";
 
-// Known outlets, always shown on the spine so the path reads consistently.
+// Known outlets, always shown so the path reads consistently.
 // Active ones (returned by the backend) light up; the rest sit dim/unwired.
 const KNOWN = [
   { id: "chatgpt", host: "chatgpt.com" },
@@ -23,7 +23,6 @@ function render({ connected, providers }) {
   const wrap = document.getElementById("wrap");
   const pill = document.getElementById("pillLabel");
   const readout = document.getElementById("readout");
-  const inletNode = document.getElementById("inletNode");
   const rail = document.getElementById("rail");
 
   // Merge known outlets with any extra active ones the backend reports.
@@ -41,7 +40,7 @@ function render({ connected, providers }) {
   if (state === "live") {
     pill.textContent = "Live";
     const n = active.size;
-    readout.innerHTML = `Routing on <b>:8765</b> &middot; ${n} outlet${n === 1 ? "" : "s"} wired`;
+    readout.innerHTML = `${n} outlet${n === 1 ? "" : "s"} wired &middot; core stable`;
   } else if (state === "idle") {
     pill.textContent = "Idle";
     readout.innerHTML = `Backend up on <b>:8765</b> &middot; open an LLM tab to wire an outlet`;
@@ -50,66 +49,73 @@ function render({ connected, providers }) {
     readout.innerHTML = `Backend down &middot; run <b>start.sh</b> to open the conduit`;
   }
 
-  // Inlet node lit whenever the backend is reachable.
-  inletNode.classList.toggle("lit", !!connected);
-
-  // Rebuild outlet stops (remove old ones, keep inlet).
-  rail.querySelectorAll(".stop.outlet").forEach((el) => el.remove());
+  // Rebuild outlet rows.
+  rail.innerHTML = "";
   outlets.forEach((o) => {
     const on = active.has(o.id);
     const row = document.createElement("div");
-    row.className = "stop outlet " + (on ? "on" : "off");
+    row.className = "outlet " + (on ? "on" : "off");
     row.innerHTML =
-      `<span class="node ${on ? "lit" : ""}"></span>` +
-      `<span class="pname">${esc(o.id)}</span>` +
-      `<span class="phost">${esc(o.host)}</span>` +
-      `<span class="tag">${on ? "wired" : "open"}</span>`;
+      (on ? `<span class="track"></span>` : "") +
+      `<span class="dot"></span>` +
+      `<span class="name">${esc(o.id)}</span>` +
+      `<span class="host">${esc(o.host)}</span>` +
+      `<span class="tag">${on ? "wired" : "open"}</span>` +
+      (on ? `<span class="flow"></span>` : "");
+    // Stagger the flow pulse so wired outlets don't fire in lockstep.
+    if (on) {
+      const flow = row.querySelector(".flow");
+      if (flow) flow.style.animationDelay = (providers.indexOf(o.id) % 3) * 1.0 + "s";
+    }
     rail.appendChild(row);
   });
 
   // Quick-start curl targets the first live outlet, else a sensible default.
   const target = providers[0] || "chatgpt";
   const block = document.getElementById("curlBlock");
-  const hint = block.querySelector(".hint");
   block.innerHTML = curlFor(target)
     .replace(/^curl/, '<span class="k">curl</span>')
     .replace(/POST/, '<span class="k">POST</span>');
-  if (hint) {
-    block.appendChild(hint);
-  } else {
-    const newHint = document.createElement("span");
-    newHint.className = "hint";
-    newHint.textContent = "click to copy";
-    block.appendChild(newHint);
-  }
   block.dataset.copy = curlFor(target);
 }
 
-function copyText(str, btn) {
-  navigator.clipboard.writeText(str).then(() => {
-    if (!btn) return;
-    const prev = btn.textContent;
-    btn.classList.add("ok");
-    btn.textContent = "✓";
-    setTimeout(() => { btn.classList.remove("ok"); btn.textContent = prev; }, 1400);
-  });
+function copyText(str) {
+  return navigator.clipboard.writeText(str);
 }
+
+// Endpoint chip: copy the bare URL, flash the hint to "copied".
+const endpointEl = document.getElementById("endpoint");
+const epHint = document.getElementById("epHint");
+endpointEl.addEventListener("click", () => {
+  copyText(ENDPOINT).then(() => {
+    endpointEl.classList.add("ok");
+    epHint.textContent = "copied";
+    setTimeout(() => { endpointEl.classList.remove("ok"); epHint.textContent = "copy"; }, 1400);
+  });
+});
+
+// Quick-start curl: copy the full command.
+const curlBlock = document.getElementById("curlBlock");
+function copyCurl() {
+  copyText(curlBlock.dataset.copy || curlBlock.innerText);
+  const hintEl = document.querySelector(".quick .eyebrow .hint");
+  if (hintEl) { hintEl.textContent = "copied"; setTimeout(() => { hintEl.textContent = "click to copy"; }, 1400); }
+}
+curlBlock.addEventListener("click", copyCurl);
+curlBlock.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); copyCurl(); } });
 
 function fetchStatus() {
   // Inside the extension: ask the background worker. Outside it (preview/dev): demo state.
-  if (typeof chrome === "undefined" || !chrome.runtime || !chrome.runtime.sendMessage) {
-    // In preview mode, allow the body/html to expand and fill the screen
+  // chrome.runtime.id is only set in a genuine extension context — a page-injected
+  // chrome (e.g. a wallet extension) has sendMessage but no id, so we treat it as preview.
+  const inExtension = typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.id && chrome.runtime.sendMessage;
+  if (!inExtension) {
     document.documentElement.style.width = "auto";
-    document.documentElement.style.height = "100%";
-    document.body.style.height = "100%";
     document.body.style.minHeight = "100vh";
-    document.body.style.padding = "32px 12px";
-    document.body.classList.add("preview-mode");
+    document.body.style.padding = "56px 12px 24px";
 
-    // Show preview controls in browser preview mode
-    const previewSwitch = document.getElementById("switch");
-    if (previewSwitch) previewSwitch.style.display = "flex";
-    document.querySelectorAll(".caption").forEach((el) => el.style.display = "block");
+    const switchEl = document.getElementById("switch");
+    if (switchEl) switchEl.style.display = "flex";
 
     const STATES = {
       live: { connected: true, providers: ["chatgpt", "claude"] },
@@ -117,7 +123,6 @@ function fetchStatus() {
       offline: { connected: false, providers: [] },
     };
 
-    const switchEl = document.getElementById("switch");
     if (switchEl && !switchEl.dataset.wired) {
       switchEl.dataset.wired = "true";
       switchEl.addEventListener("click", (e) => {
@@ -132,29 +137,17 @@ function fetchStatus() {
     return;
   }
 
-  // Hide preview controls in actual extension context
-  const previewSwitch = document.getElementById("switch");
-  if (previewSwitch) previewSwitch.style.display = "none";
-  document.querySelectorAll(".caption").forEach((el) => el.style.display = "none");
+  const switchEl = document.getElementById("switch");
+  if (switchEl) switchEl.style.display = "none";
 
-  chrome.runtime.sendMessage({ type: "getStatus" }, (resp) => {
-    if (chrome.runtime.lastError || !resp) render({ connected: false, providers: [] });
-    else render(resp);
-  });
+  try {
+    chrome.runtime.sendMessage({ type: "getStatus" }, (resp) => {
+      if (chrome.runtime.lastError || !resp) render({ connected: false, providers: [] });
+      else render(resp);
+    });
+  } catch (e) {
+    render({ connected: false, providers: [] });
+  }
 }
-
-document.getElementById("copyEndpoint").addEventListener("click", (e) => {
-  e.stopPropagation();
-  copyText(ENDPOINT, e.currentTarget);
-});
-
-const curlBlock = document.getElementById("curlBlock");
-function copyCurl() {
-  copyText(curlBlock.dataset.copy || curlBlock.innerText);
-  const hint = curlBlock.querySelector(".hint");
-  if (hint) { hint.textContent = "copied"; setTimeout(() => { hint.textContent = "click to copy"; }, 1400); }
-}
-curlBlock.addEventListener("click", copyCurl);
-curlBlock.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); copyCurl(); } });
 
 fetchStatus();
