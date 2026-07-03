@@ -714,19 +714,23 @@ function findImageCandidates(msgsBefore) {
     if (c.length) container = c[c.length - 1];
   }
 
-  // Pierce shadow DOM — Gemini nests images inside multiple shadow roots
-  return querySelectorAllDeep(container || document.body, "img").filter((img) => {
+  const searchRoot = container || document.body;
+  const allImgs = querySelectorAllDeep(searchRoot, "img");
+  console.log(`[Conduit] findImageCandidates: container=${searchRoot.tagName}, total imgs=${allImgs.length}`);
+
+  return allImgs.filter((img) => {
     const src = img.src;
-    // Skip truly empty src; allow blob:/data:/https: (all handled by fetchImageAsDataUrl)
-    if (!src) return false;
+    if (!src) { console.log(`[Conduit]   skip (no src): ${img.outerHTML.slice(0, 100)}`); return false; }
     const isAvatar = img.closest('[class*="avatar"]') ||
                      img.classList.contains("avatar") ||
                      /avatar|profile|user/i.test(img.alt || "") ||
                      /avatar|profile|user/i.test(img.className || "");
-    if (isAvatar) return false;
-    // Accept if size unknown (naturalWidth=0 = not loaded yet) or clearly large
-    return (img.naturalWidth === 0 || img.naturalWidth >= 120) &&
-           (img.width === 0 || img.width >= 120);
+    if (isAvatar) { console.log(`[Conduit]   skip (avatar): ${src.slice(0, 60)}`); return false; }
+    const sizeOk = (img.naturalWidth === 0 || img.naturalWidth >= 120) &&
+                   (img.width === 0 || img.width >= 120);
+    if (!sizeOk) { console.log(`[Conduit]   skip (size nw=${img.naturalWidth} w=${img.width}): ${src.slice(0, 60)}`); return false; }
+    console.log(`[Conduit]   KEEP: src=${src.slice(0, 80)} nw=${img.naturalWidth} w=${img.width}`);
+    return true;
   });
 }
 
