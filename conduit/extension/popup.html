@@ -15,26 +15,26 @@
     }
 
     :root {
-      --ink: #070C0D;
-      --ink-2: #0B1213;
-      --ink-3: #0F1819;
-      --line: #182122;
-      --line-2: #223231;
-      --signal: #3BE8B0;
-      --signal-soft: #3be8b02e;
-      --signal-faint: #3be8b014;
-      --hot: #A7FFE4;
+      --ink: #070708;
+      --ink-2: #0E0E10;
+      --ink-3: #16161A;
+      --line: #222228;
+      --line-2: #2E2E38;
+      --signal: #0A84FF;
+      --signal-soft: rgba(10, 132, 255, 0.25);
+      --signal-faint: rgba(10, 132, 255, 0.1);
+      --hot: #64D2FF;
       --warn: #F5C451;
-      --dead: #FB7185;
-      --text: #DBE8E4;
-      --muted: #61756F;
-      --faint: #33413D;
+      --dead: #FF453A;
+      --text: #E5E5EA;
+      --muted: #8E8E93;
+      --faint: #48484A;
       --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
       --font-mono: ui-monospace, "JetBrains Mono", "SF Mono", "Fira Code", Menlo, Consolas, monospace;
     }
 
     html {
-      width: 340px;
+      width: 356px;
     }
 
     body {
@@ -43,11 +43,11 @@
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      background: #05090a;
+      background: #060608;
       font-family: var(--font-sans);
       overflow-x: hidden;
       margin: 0;
-      padding: 0;
+      padding: 8px;
     }
 
     /* Ambient background blobs for glassmorphic depth */
@@ -61,17 +61,17 @@
       z-index: 0;
       pointer-events: none;
       filter: blur(80px);
-      opacity: 0.5;
+      opacity: 0.45;
     }
 
     body::before {
-      background: radial-gradient(circle, var(--signal) 0%, transparent 70%);
+      background: radial-gradient(circle, rgba(10, 132, 255, 0.4) 0%, transparent 70%);
       top: 15%;
       left: calc(50% - 180px);
     }
 
     body::after {
-      background: radial-gradient(circle, var(--hot) 0%, transparent 70%);
+      background: radial-gradient(circle, rgba(191, 90, 242, 0.35) 0%, transparent 70%);
       bottom: 15%;
       right: calc(50% - 180px);
     }
@@ -82,22 +82,17 @@
       width: 340px;
       font-size: 13px;
       color: var(--text);
-      background: radial-gradient(120% 60% at 50% -10%, rgba(13, 26, 25, 0.45) 0%, rgba(7, 12, 13, 0.6) 100%);
-      backdrop-filter: blur(20px) saturate(180%);
-      -webkit-backdrop-filter: blur(20px) saturate(180%);
-      border: none;
-      box-shadow: none;
-      -webkit-font-smoothing: antialiased;
-    }
-
-    /* Floating device styling active ONLY in browser preview mode */
-    body.preview-mode .device {
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      border-top: 1px solid rgba(255, 255, 255, 0.16);
+      background: radial-gradient(120% 60% at 50% -10%, rgba(30, 30, 35, 0.5) 0%, rgba(10, 10, 12, 0.75) 100%);
+      backdrop-filter: blur(24px) saturate(190%);
+      -webkit-backdrop-filter: blur(24px) saturate(190%);
+      border: 1px solid rgba(255, 255, 255, 0.07);
+      border-top: 1px solid rgba(255, 255, 255, 0.14);
       border-radius: 16px;
+      overflow: hidden;
       box-shadow: 
-        0 24px 50px -12px rgba(0, 0, 0, 0.65),
-        inset 0 1px 0 rgba(255, 255, 255, 0.1);
+        0 12px 32px -4px rgba(0, 0, 0, 0.7),
+        inset 0 1px 0 rgba(255, 255, 255, 0.08);
+      -webkit-font-smoothing: antialiased;
     }
 
     .header {
@@ -537,9 +532,9 @@
 
     .switch button.active {
       color: var(--signal);
-      background: rgba(59, 232, 176, 0.1);
-      border-color: rgba(59, 232, 176, 0.3);
-      box-shadow: 0 0 12px rgba(59, 232, 176, 0.15);
+      background: rgba(10, 132, 255, 0.1);
+      border-color: rgba(10, 132, 255, 0.3);
+      box-shadow: 0 0 12px rgba(10, 132, 255, 0.15);
     }
 
     .caption {
@@ -567,15 +562,15 @@
         <svg width="26" height="26" viewBox="0 0 26 26" fill="none" aria-hidden="true">
           <defs>
             <linearGradient id="cg" x1="13" y1="4" x2="13" y2="22" gradientUnits="userSpaceOnUse">
-              <stop stop-color="#3BE8B0" />
-              <stop offset="1" stop-color="#12907A" />
+              <stop stop-color="#0A84FF" />
+              <stop offset="1" stop-color="#0040DD" />
             </linearGradient>
           </defs>
-          <rect x="0.5" y="0.5" width="25" height="25" rx="7.5" fill="#0B1213" stroke="url(#cg)" stroke-opacity="0.6" />
-          <line x1="13" y1="6.5" x2="13" y2="19.5" stroke="#1d3330" stroke-width="2" stroke-linecap="round" />
+          <rect x="0.5" y="0.5" width="25" height="25" rx="7.5" fill="#0E0E10" stroke="url(#cg)" stroke-opacity="0.6" />
+          <line x1="13" y1="6.5" x2="13" y2="19.5" stroke="#2C2C2E" stroke-width="2" stroke-linecap="round" />
           <line x1="13" y1="10.5" x2="13" y2="15.5" stroke="url(#cg)" stroke-width="2.6" stroke-linecap="round" />
-          <circle cx="13" cy="6.5" r="2.2" fill="#3BE8B0" />
-          <circle cx="13" cy="19.5" r="2.2" fill="#3BE8B0" />
+          <circle cx="13" cy="6.5" r="2.2" fill="#0A84FF" />
+          <circle cx="13" cy="19.5" r="2.2" fill="#0A84FF" />
         </svg>
         <span class="wordmark">Condu<span class="tail">it</span></span>
       </div>
