@@ -662,6 +662,32 @@ function fetchImageViaBackground(url) {
   });
 }
 
+/**
+ * Fetch any image URL and return a base64 data URL.
+ *
+ * blob: → fetch in content script (tab-scoped, SW cannot access them)
+ * data: → already encoded, return as-is
+ * https: → route through background SW to bypass CORS
+ */
+async function fetchImageAsDataUrl(url) {
+  if (url.startsWith("data:")) return url;
+
+  if (url.startsWith("blob:")) {
+    // Blob URLs are tied to the tab's origin — only the content script can fetch them
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error(`Blob fetch failed: HTTP ${resp.status}`);
+    const blob = await resp.blob();
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  return fetchImageViaBackground(url);
+}
+
 function findImageCandidates(msgsBefore) {
   let container = null;
 
@@ -691,15 +717,14 @@ function findImageCandidates(msgsBefore) {
   // Pierce shadow DOM — Gemini nests images inside multiple shadow roots
   return querySelectorAllDeep(container || document.body, "img").filter((img) => {
     const src = img.src;
-    // Skip empty, blob (tab-scoped, unfetchable from SW), and data URLs
-    if (!src || src.startsWith("blob:") || src.startsWith("data:")) return false;
-    if (!/^https?:/.test(src)) return false;
+    // Skip truly empty src; allow blob:/data:/https: (all handled by fetchImageAsDataUrl)
+    if (!src) return false;
     const isAvatar = img.closest('[class*="avatar"]') ||
                      img.classList.contains("avatar") ||
                      /avatar|profile|user/i.test(img.alt || "") ||
                      /avatar|profile|user/i.test(img.className || "");
     if (isAvatar) return false;
-    // Accept if size unknown (naturalWidth=0 means not loaded yet) or clearly large
+    // Accept if size unknown (naturalWidth=0 = not loaded yet) or clearly large
     return (img.naturalWidth === 0 || img.naturalWidth >= 120) &&
            (img.width === 0 || img.width >= 120);
   });
@@ -729,12 +754,12 @@ async function captureImages(msgsBefore, pollForLateImages = false) {
   const base64Images = [];
   for (const img of candidates) {
     try {
-      console.log(`[Conduit] Fetching image via SW: ${img.src}`);
-      const dataUrl = await fetchImageViaBackground(img.src);
+      console.log(`[Conduit] Fetching image (${img.src.slice(0, 60)}…)`);
+      const dataUrl = await fetchImageAsDataUrl(img.src);
       base64Images.push(dataUrl);
       console.log(`[Conduit] Image encoded. Size: ${dataUrl.length} chars`);
     } catch (e) {
-      console.warn(`[Conduit] Failed to fetch image ${img.src}:`, e.message);
+      console.warn(`[Conduit] Failed to fetch image ${img.src.slice(0, 80)}:`, e.message);
     }
   }
   return base64Images;
