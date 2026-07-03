@@ -596,7 +596,14 @@ function captureResponse(msgsBefore = 0) {
 }
 
 function text(el) {
-  return (el?.innerText || el?.textContent || "").trim();
+  if (!el) return "";
+  const a = (el.innerText || "").trim();
+  if (a) return a;
+  // innerText is layout-dependent and returns "" in background tabs;
+  // textContent is layout-independent and always works.
+  const clone = el.cloneNode(true);
+  clone.querySelectorAll("script, style, noscript").forEach(n => n.remove());
+  return (clone.textContent || "").trim();
 }
 
 // ═══════════════════════════════════════════════════════════════
