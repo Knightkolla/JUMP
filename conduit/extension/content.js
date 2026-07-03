@@ -634,6 +634,24 @@ async function toggleWebSearch(adapter, enable) {
   }
 }
 
+/**
+ * querySelectorAll that recursively pierces shadow roots.
+ * Needed for Gemini's web components (model-response → img-gen-response → img).
+ */
+function querySelectorAllDeep(root, selector) {
+  const results = [];
+  function search(el) {
+    try {
+      results.push(...Array.from(el.querySelectorAll(selector)));
+      el.querySelectorAll("*").forEach((child) => {
+        if (child.shadowRoot) search(child.shadowRoot);
+      });
+    } catch (_) {}
+  }
+  search(root);
+  return results;
+}
+
 function fetchImageViaBackground(url) {
   return new Promise((resolve, reject) => {
     chrome.runtime.sendMessage({ type: "fetchImage", url }, (resp) => {
@@ -645,6 +663,10 @@ function fetchImageViaBackground(url) {
 }
 
 async function captureImages(msgsBefore) {
+  // Extra wait for lazy-loaded images (Gemini Imagen can render after the stop
+  // button disappears but before the full-res image src is stamped in the DOM)
+  await sleep(600);
+
   let container = null;
 
   // ChatGPT: new assistant messages after the snapshot
@@ -658,10 +680,11 @@ async function captureImages(msgsBefore) {
     if (markdown.length) container = markdown[markdown.length - 1];
   }
 
-  // Gemini: model-response web component (last = most recent reply)
-  // Also covers img-gen-response which Gemini uses for Imagen output
+  // Gemini: model-response / img-gen-response web components (last = newest reply)
   if (!container) {
-    const gemini = document.querySelectorAll("model-response, img-gen-response, .response-content");
+    const gemini = document.querySelectorAll(
+      "model-response, img-gen-response, img-gen-image, .response-content"
+    );
     if (gemini.length) container = gemini[gemini.length - 1];
   }
 
@@ -671,9 +694,11 @@ async function captureImages(msgsBefore) {
     if (claude.length) container = claude[claude.length - 1];
   }
 
-  if (!container) return [];
+  // Use body as last-resort so we never miss images due to a bad container guess
+  const searchRoot = container || document.body;
 
-  const imgElements = Array.from(container.querySelectorAll("img"));
+  // Pierce shadow DOM — Gemini nests images inside multiple shadow roots
+  const imgElements = querySelectorAllDeep(searchRoot, "img");
   const base64Images = [];
 
   for (const img of imgElements) {
