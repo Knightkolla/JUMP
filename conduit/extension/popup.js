@@ -83,6 +83,15 @@ function copyText(str) {
   return navigator.clipboard.writeText(str);
 }
 
+// Drawer: update hint text on open/close.
+const drawer = document.getElementById("drawer");
+const drawerHint = document.getElementById("drawerHint");
+if (drawer && drawerHint) {
+  drawer.addEventListener("toggle", () => {
+    drawerHint.textContent = drawer.open ? "collapse" : "expand";
+  });
+}
+
 // Endpoint chip: copy the bare URL, flash the hint to "copied".
 const endpointEl = document.getElementById("endpoint");
 const epHint = document.getElementById("epHint");
