@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Conduit</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      width: 300px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 13px;
+      background: #0d0d0d;
+      color: #e2e2e2;
+    }
+
+    /* ── Header ── */
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 16px 12px;
+      border-bottom: 1px solid #1f1f1f;
+    }
+    .header-left { display: flex; align-items: center; gap: 9px; }
+    .logo-mark {
+      width: 28px; height: 28px;
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      border-radius: 7px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px;
+    }
+    .logo-text { font-size: 15px; font-weight: 700; color: #fff; letter-spacing: -0.3px; }
+    .version-badge {
+      font-size: 10px; color: #555;
+      background: #1a1a1a; border: 1px solid #2a2a2a;
+      padding: 2px 6px; border-radius: 99px;
+    }
+    .refresh-btn {
+      background: none; border: none; cursor: pointer;
+      color: #444; font-size: 14px; padding: 4px;
+      border-radius: 4px; transition: color 0.15s;
+    }
+    .refresh-btn:hover { color: #888; }
+
+    /* ── Status bar ── */
+    .status-bar {
+      display: flex; align-items: center; gap: 8px;
+      padding: 9px 16px;
+      background: #111;
+      border-bottom: 1px solid #1a1a1a;
+    }
+    .dot {
+      width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+    }
+    .dot.green { background: #22c55e; box-shadow: 0 0 5px #22c55e99; }
+    .dot.red   { background: #ef4444; }
+    .dot.amber { background: #f59e0b; }
+    .dot.pulse { animation: pulse 1.6s ease-in-out infinite; }
+    @keyframes pulse { 0%,100% { opacity:1 } 50% { opacity:.35 } }
+    .status-text { font-size: 12px; color: #999; }
+
+    /* ── Body ── */
+    .body { padding: 12px 16px; display: flex; flex-direction: column; gap: 12px; }
+
+    /* ── Section label ── */
+    .label {
+      font-size: 10px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.09em; color: #444; margin-bottom: 5px;
+    }
+
+    /* ── Provider cards ── */
+    .providers { display: flex; flex-direction: column; gap: 4px; }
+    .provider-card {
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 10px;
+      background: #161616; border: 1px solid #222;
+      border-radius: 8px;
+    }
+    .provider-icon { font-size: 16px; line-height: 1; }
+    .provider-name { flex: 1; font-size: 13px; color: #ddd; text-transform: capitalize; }
+    .provider-url { font-size: 10px; color: #444; font-family: monospace; }
+    .no-providers {
+      text-align: center; color: #383838; font-size: 12px;
+      padding: 14px 0; line-height: 1.6;
+    }
+
+    /* ── Endpoint card ── */
+    .endpoint-card {
+      background: #161616; border: 1px solid #222; border-radius: 8px;
+      overflow: hidden;
+    }
+    .endpoint-top {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 10px;
+      border-bottom: 1px solid #1e1e1e;
+    }
+    .method-badge {
+      font-size: 10px; font-weight: 700; color: #6366f1;
+      background: #6366f115; border: 1px solid #6366f133;
+      padding: 2px 6px; border-radius: 4px; font-family: monospace;
+      flex-shrink: 0;
+    }
+    .endpoint-url {
+      flex: 1; font-family: "SF Mono", "Fira Code", monospace;
+      font-size: 11px; color: #7dd3fc;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .copy-btn {
+      background: none; border: none; cursor: pointer;
+      color: #444; font-size: 13px; padding: 2px 4px;
+      border-radius: 4px; transition: color 0.15s; flex-shrink: 0;
+    }
+    .copy-btn:hover { color: #888; }
+    .copy-btn.copied { color: #22c55e; }
+
+    /* ── Curl example ── */
+    .curl-block {
+      padding: 8px 10px;
+      font-family: "SF Mono", "Fira Code", monospace;
+      font-size: 10px; color: #555; line-height: 1.5;
+      white-space: pre-wrap; word-break: break-all;
+      background: #111; border-radius: 8px;
+      border: 1px solid #1e1e1e;
+      cursor: pointer; transition: border-color 0.15s;
+      position: relative;
+    }
+    .curl-block:hover { border-color: #333; }
+    .curl-block:hover .curl-copy-hint { opacity: 1; }
+    .curl-copy-hint {
+      position: absolute; top: 6px; right: 8px;
+      font-size: 9px; color: #444; opacity: 0;
+      transition: opacity 0.15s; font-family: sans-serif;
+    }
+
+    /* ── Footer ── */
+    .footer {
+      padding: 8px 16px 12px;
+      font-size: 10px; color: #2a2a2a;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="header-left">
+      <div class="logo-mark">⚡</div>
+      <span class="logo-text">Conduit</span>
+      <span class="version-badge">v1.0</span>
+    </div>
+    <button class="refresh-btn" id="refreshBtn" title="Refresh status">↻</button>
+  </div>
+
+  <div class="status-bar">
+    <div class="dot pulse amber" id="statusDot"></div>
+    <span class="status-text" id="statusText">Checking…</span>
+  </div>
+
+  <div class="body">
+    <div>
+      <div class="label">Providers</div>
+      <div class="providers" id="providerList">
+        <div class="no-providers">No LLM tabs open<br>Open ChatGPT, Claude, or Gemini</div>
+      </div>
+    </div>
+
+    <div>
+      <div class="label">API endpoint</div>
+      <div class="endpoint-card">
+        <div class="endpoint-top">
+          <span class="method-badge">POST</span>
+          <span class="endpoint-url">http://localhost:8765/v1/chat</span>
+          <button class="copy-btn" id="copyEndpoint" title="Copy URL">⎘</button>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="label">Quick start — click to copy</div>
+      <div class="curl-block" id="curlBlock">
+        <span class="curl-copy-hint">click to copy</span>curl -X POST http://localhost:8765/v1/chat \
+  -H "Content-Type: application/json" \
+  -d '{"provider":"chatgpt","prompt":"Hello!"}'</div>
+    </div>
+  </div>
+
+  <div class="footer">Conduit — LLM UI → API bridge</div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
