@@ -642,6 +642,7 @@ function startKeepAlive() {
     keepAliveAudio.loop = true;
   }
   keepAliveAudio.play().then(() => {
+    chrome.runtime.sendMessage({ type: "setBadge", text: "LIVE", color: "#10b981" });
     if (!keepAliveSuccessShown) {
       showToast("🔊 Conduit: Background keep-alive active");
       keepAliveSuccessShown = true;
@@ -654,6 +655,7 @@ function startKeepAlive() {
 
 function stopKeepAlive() {
   if (keepAliveAudio) keepAliveAudio.pause();
+  chrome.runtime.sendMessage({ type: "setBadge", text: "" });
 }
 
 function enqueue(item) {

@@ -146,6 +146,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       sendResponse({ ok: true });
       break;
 
+    case "setBadge":
+      if (chrome.action) {
+        chrome.action.setBadgeText({ text: msg.text || "", tabId });
+        if (msg.color) chrome.action.setBadgeBackgroundColor({ color: msg.color, tabId });
+      }
+      sendResponse({ ok: true });
+      break;
+
     case "getStatus":
       sendResponse({
         connected: ws?.readyState === WebSocket.OPEN,
