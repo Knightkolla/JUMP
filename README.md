@@ -9,7 +9,7 @@
   [![FastAPI](https://img.shields.io/badge/FastAPI-0.111+-009688?style=flat-square&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
   [![Chrome MV3](https://img.shields.io/badge/Chrome-MV3-4285F4?style=flat-square&logo=googlechrome&logoColor=white)](https://developer.chrome.com/docs/extensions/mv3/)
   [![License: MIT](https://img.shields.io/badge/license-MIT-22c55e?style=flat-square)](LICENSE)
-  [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-a855f7?style=flat-square)](https://github.com/Knightkolla/JUMP/pulls)
+  [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-a855f7?style=flat-square)](https://github.com/Knightkolla/CONDUIT/pulls)
 
 </div>
 
@@ -247,13 +247,67 @@ conduit/
 
 ---
 
+## Deployment
+
+The backend must be reachable by both the Chrome extension (WebSocket) and whatever is calling `/v1/chat` (HTTP). The extension runs in the user's local browser either way — it just needs to connect to wherever the backend lives.
+
+### Option A — Docker (recommended, per-user self-hosted)
+
+Each user runs their own backend. Extension stays pointed at `localhost:8765` — no config changes needed.
+
+```bash
+git clone https://github.com/Knightkolla/CONDUIT.git
+cd CONDUIT/conduit
+cp backend/.env.example backend/.env
+docker compose up -d
+```
+
+Load the extension, open a provider tab, call the API. That's it.
+
+---
+
+### Option B — Railway (remote backend, your browser session)
+
+Useful when you want to call the API from a different machine or script while the browser stays on your laptop.
+
+1. Push to GitHub, go to [railway.app](https://railway.app) → **New Project** → **Deploy from GitHub**
+2. Select `CONDUIT`, set Root Directory to `conduit/backend`
+3. Add env vars from `.env.example` if needed
+4. Note your public URL (e.g. `https://conduit-production.up.railway.app`)
+
+Update `background.js` lines 13–14:
+
+```js
+const BACKEND_WS_URL = "wss://conduit-production.up.railway.app/ws";
+const BACKEND_HTTP_URL = "https://conduit-production.up.railway.app";
+```
+
+Reload the extension — your browser connects to the remote backend and the API is callable from anywhere.
+
+> Anyone with your Railway URL can send prompts through your accounts. Don't expose it publicly without authentication.
+
+---
+
+### Option C — VPS with nginx
+
+```bash
+git clone https://github.com/Knightkolla/CONDUIT.git
+cd CONDUIT/conduit/backend
+python3.11 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt && python main.py
+```
+
+Put nginx in front for TLS (`wss://` is required for the extension to connect over HTTPS), then update `background.js` as shown in Option B.
+
+---
+
 ## Contributing
 
 Issues and PRs are welcome. For anything bigger than a bug fix, open an issue first so we can align on direction.
 
 ```bash
-git clone https://github.com/Knightkolla/JUMP.git
-cd JUMP/conduit/backend
+git clone https://github.com/Knightkolla/CONDUIT.git
+cd CONDUIT/conduit/backend
 python3.11 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 ```
